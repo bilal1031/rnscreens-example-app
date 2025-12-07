@@ -1,0 +1,145 @@
+diff --git a/node_modules/react-native-screens/src/components/bottom-tabs/BottomTabsScreen.tsx b/node_modules/react-native-screens/src/components/bottom-tabs/BottomTabsScreen.tsx
+index ce02d94..22f29f9 100644
+--- a/node_modules/react-native-screens/src/components/bottom-tabs/BottomTabsScreen.tsx
++++ b/node_modules/react-native-screens/src/components/bottom-tabs/BottomTabsScreen.tsx
+@@ -4,6 +4,7 @@ import React from 'react';
+ import { Freeze } from 'react-freeze';
+ import {
+   Image,
++  Platform,
+   StyleSheet,
+   findNodeHandle,
+   processColor,
+@@ -17,6 +18,8 @@ import BottomTabsScreenNativeComponent, {
+   type Appearance,
+   type ItemAppearance,
+   type ItemStateAppearance,
++  type IconProps,
++  type PlatformIcon,
+ } from '../../fabric/bottom-tabs/BottomTabsScreenNativeComponent';
+ import { featureFlags } from '../../flags';
+ import type {
+@@ -241,7 +244,7 @@ function shouldFreezeScreen(
+   return !nativeViewVisible;
+ }
+ 
+-function parseIconToNativeProps(icon: Icon | undefined): {
++function parseIconToNativeProps(icon: Icon | IconProps | undefined): {
+   iconType?: IconType;
+   iconImageSource?: ImageSourcePropType;
+   iconSfSymbolName?: string;
+@@ -250,23 +253,55 @@ function parseIconToNativeProps(icon: Icon | undefined): {
+     return {};
+   }
+ 
+-  if ('sfSymbolName' in icon) {
+-    // iOS-specific: SFSymbol usage
++  // Check if it's a PlatformIcon (has platform-specific properties)
++  const isPlatformIcon =
++    typeof icon === 'object' &&
++    ('ios' in icon || 'android' in icon || 'shared' in icon);
++  let platformIcon: PlatformIcon | Icon | undefined = undefined;
++
++  if (isPlatformIcon) {
++    // Handle PlatformIcon with platform-specific logic
++    const platformIconTyped = icon as IconProps;
++
++    if (Platform.OS === 'ios') {
++      platformIcon = platformIconTyped.ios ?? platformIconTyped.shared;
++    } else if (Platform.OS === 'android') {
++      platformIcon = platformIconTyped.android ?? platformIconTyped.shared;
++    } else {
++      platformIcon = platformIconTyped.shared;
++    }
++  } else {
++    // Handle Icon type directly
++    platformIcon = icon as PlatformIcon;
++  }
++
++  if (!platformIcon) {
++    return {};
++  }
++
++  if ('sfSymbolName' in platformIcon) {
+     return {
+       iconType: 'sfSymbol',
+-      iconSfSymbolName: icon.sfSymbolName,
++      iconSfSymbolName: platformIcon.sfSymbolName as string,
+     };
+-  } else if ('imageSource' in icon) {
++  } else if ('type' in platformIcon && platformIcon.type === 'sfSymbol') {
++    return {
++      iconType: 'sfSymbol',
++      iconSfSymbolName: platformIcon.name,
++    };
++  } else if ('imageSource' in platformIcon) {
+     return {
+       iconType: 'image',
+-      iconImageSource: icon.imageSource,
++      iconImageSource: platformIcon.imageSource as ImageSourcePropType,
+     };
+-  } else if ('templateSource' in icon) {
+-    // iOS-specifig: image as a template usage
++  } else if ('templateSource' in platformIcon) {
+     return {
+       iconType: 'template',
+-      iconImageSource: icon.templateSource,
++      iconImageSource: platformIcon.templateSource as ImageSourcePropType,
+     };
++  } else if ('type' in platformIcon && platformIcon.type === 'drawableResource') {
++    // Android drawableResource is handled separately through iconResource/iconResourceName
++    return {};
+   } else {
+     // iOS-specific: SFSymbol, image as a template usage
+     throw new Error(
+@@ -285,6 +320,7 @@ function parseIconsToNativeProps(
+   selectedIconImageSource?: ImageSourcePropType;
+   selectedIconSfSymbolName?: string;
+ } {
++
+   const { iconImageSource, iconSfSymbolName, iconType } =
+     parseIconToNativeProps(icon);
+   const {
+diff --git a/node_modules/react-native-screens/src/fabric/bottom-tabs/BottomTabsScreenNativeComponent.ts b/node_modules/react-native-screens/src/fabric/bottom-tabs/BottomTabsScreenNativeComponent.ts
+index 2bc5724..25fa672 100644
+--- a/node_modules/react-native-screens/src/fabric/bottom-tabs/BottomTabsScreenNativeComponent.ts
++++ b/node_modules/react-native-screens/src/fabric/bottom-tabs/BottomTabsScreenNativeComponent.ts
+@@ -20,6 +20,38 @@ import { UnsafeMixed } from './codegenUtils';
+ // iOS-specific: SFSymbol, image as a template usage
+ export type IconType = 'image' | 'template' | 'sfSymbol';
+ 
++export type SFSIconProps = {
++  type: 'sfSymbol';
++  name: string;
++};
++
++export type TemplateIconProps = {
++  type: 'templateSource';
++  templateSource: ImageSource;
++};
++
++export type ImageIconProps = {
++  type: 'imageSource';
++  imageSource: ImageSource;
++};
++
++export type DrawableIconProps = {
++  type: 'drawableResource';
++  name: string;
++};
++
++export type PlatformIcon =
++  | SFSIconProps
++  | TemplateIconProps
++  | ImageIconProps
++  | DrawableIconProps;
++
++export type IconProps = {
++  ios?: SFSIconProps | TemplateIconProps;
++  android?: DrawableIconProps;
++  shared?: ImageIconProps;
++};
++
+ // eslint-disable-next-line @typescript-eslint/ban-types
+ type GenericEmptyEvent = Readonly<{}>;
+ 
